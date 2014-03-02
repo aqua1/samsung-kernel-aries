@@ -63,6 +63,11 @@ static int lowmem_minfree[6] = {
 	16 * 1024,	/* 64MB */
 };
 static int lowmem_minfree_size = 4;
+
+static int white_list[6] = {
+};
+static int white_list_size = 0;
+
 #ifdef CONFIG_ZRAM_FOR_ANDROID
 static struct class *lmk_class;
 static struct device *lmk_dev;
@@ -154,6 +159,7 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 	int selected_tasksize = 0;
 	int selected_oom_adj;
 #endif
+	int white_size = ARRAY_SIZE(white_list);
 	int array_size = ARRAY_SIZE(lowmem_adj);
 	int other_free = global_page_state(NR_FREE_PAGES);
 	int other_file = global_page_state(NR_FILE_PAGES) -
@@ -178,6 +184,8 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 		return 0;
 #endif
 
+	if (white_list_size < white_size)
+		white_size = white_list_size;
 	if (lowmem_adj_size < array_size)
 		array_size = lowmem_adj_size;
 	if (lowmem_minfree_size < array_size)
@@ -216,6 +224,7 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 #ifdef ENHANCED_LMK_ROUTINE
 		int is_exist_oom_task = 0;
 #endif
+		int white = 0;
 
 		if (tsk->flags & PF_KTHREAD)
 			continue;
@@ -223,6 +232,18 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 		p = find_lock_task_mm(tsk);
 		if (!p)
 			continue;
+
+		for (i = 0; i < white_size; i++) {
+			if (p->pid == white_list[i]) {
+				white = 1;
+				lowmem_print(2, "pid %d to white list", p->pid);
+				break;
+			}
+		}
+		if (white) {
+			task_unlock(p);
+			continue;
+		}
 
 		oom_adj = p->signal->oom_adj;
 		if (oom_adj < min_adj) {
@@ -553,6 +574,8 @@ module_param_named(cost, lowmem_shrinker.seeks, int, S_IRUGO | S_IWUSR);
 module_param_array_named(adj, lowmem_adj, int, &lowmem_adj_size,
 			 S_IRUGO | S_IWUSR);
 module_param_array_named(minfree, lowmem_minfree, uint, &lowmem_minfree_size,
+			 S_IRUGO | S_IWUSR);
+module_param_array_named(w_list, white_list, int, &white_list_size,
 			 S_IRUGO | S_IWUSR);
 module_param_named(debug_level, lowmem_debug_level, uint, S_IRUGO | S_IWUSR);
 
